@@ -13,7 +13,7 @@ interface Question {
 
 const Flashcard: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
-  const [questionType, setQuestionType] = useState<string>('one_word');
+  const [questionType, setQuestionType] = useState<string>('flashcard');
   const [flashcardData, setFlashcardData] = useState<FlashcardData | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [showAnswer, setShowAnswer] = useState<boolean>(false);
@@ -62,14 +62,27 @@ const Flashcard: React.FC = () => {
 
     try {
       const response = await axios.post('http://localhost:3000/api/process-file', formData);
-      setFlashcardData(response.data);
-      const processedQuestions = processQuestions(response.data.questions);
-      setQuestions(processedQuestions);
+      
+      if (!response.data || !response.data.questions) {
+        throw new Error('Invalid response format from server');
+      }
+
+      setFlashcardData({
+        summary: response.data.summary || '',
+        questions: response.data.questions
+      });
+      
+      // The questions are already in the correct format from the backend
+      setQuestions(response.data.questions);
       setCurrentQuestionIndex(0);
       setShowAnswer(false);
-    } catch (err) {
-      setError('Error processing file. Please try again.');
-      console.error('Error:', err);
+    } catch (err: any) {
+      console.error('Error details:', err.response?.data);
+      const errorMessage = err.response?.data?.details || 
+                          err.response?.data?.error || 
+                          err.message || 
+                          'Error processing file. Please try again.';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -125,10 +138,12 @@ const Flashcard: React.FC = () => {
               onChange={handleQuestionTypeChange}
               className="w-full p-2 border rounded"
             >
-              <option value="one_word">One Word</option>
-              <option value="true_false">True/False</option>
-              <option value="3_mark">3 Mark</option>
-              <option value="5_mark">5 Mark</option>
+              <option value="flashcard">Flashcards</option>
+              <option value="1marker">1 Marker</option>
+              <option value="2marker">2 Markers</option>
+              <option value="3marker">3 Markers</option>
+              <option value="5marker">5 Markers</option>
+              <option value="truefalse">True/False</option>
             </select>
           </div>
 

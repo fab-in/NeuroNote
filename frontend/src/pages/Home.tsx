@@ -14,7 +14,7 @@ interface Question {
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
-  const [questionType, setQuestionType] = useState('one_word');
+  const [questionType, setQuestionType] = useState('1marker');
   const [flashcardData, setFlashcardData] = useState<FlashcardData | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [showAnswer, setShowAnswer] = useState<boolean>(false);
@@ -58,15 +58,27 @@ export default function Home() {
 
     try {
       const response = await axios.post('http://localhost:3000/api/process-file', formData);
-      setFlashcardData(response.data);
-      const processedQuestions = processQuestions(response.data.questions);
-      setQuestions(processedQuestions);
+      
+      if (!response.data || !response.data.questions) {
+        throw new Error('Invalid response format from server');
+      }
+
+      setFlashcardData({
+        summary: response.data.summary || '',
+        questions: response.data.questions
+      });
+      
+      // The questions are already in the correct format from the backend
+      setQuestions(response.data.questions);
       setCurrentQuestionIndex(0);
       setShowAnswer(false);
     } catch (err: any) {
-      const errorMessage = err.response?.data?.details || err.response?.data?.error || 'Error processing file. Please try again.';
+      console.error('Error details:', err.response?.data);
+      const errorMessage = err.response?.data?.details || 
+                          err.response?.data?.error || 
+                          err.message || 
+                          'Error processing file. Please try again.';
       setError(errorMessage);
-      console.error('Error:', err);
     } finally {
       setLoading(false);
     }
@@ -152,10 +164,10 @@ export default function Home() {
               onChange={(e) => setQuestionType(e.target.value)}
               className="block w-full rounded-md border border-gray-600 bg-gray-700 px-3 py-2 text-white shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
-              <option value="one_word">One Word</option>
-              <option value="true_false">True/False</option>
-              <option value="3_mark">3 Mark</option>
-              <option value="5_mark">5 Mark</option>
+              <option value="1marker">One Mark</option>
+              <option value="2marker">Two Mark</option>
+              <option value="5marker">Five Mark</option>
+              <option value="truefalse">True/False</option>
             </select>
           </div>
 

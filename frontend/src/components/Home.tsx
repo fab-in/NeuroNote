@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
-  const [questionType, setQuestionType] = useState('flashcard');
+  const [questionType, setQuestionType] = useState('1marker');
   const [numQuestions, setNumQuestions] = useState(5);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -99,12 +99,10 @@ export default function Home() {
               onChange={(e) => setQuestionType(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="flashcard">Flashcards</option>
               <option value="1marker">1 Marker</option>
               <option value="2marker">2 Markers</option>
-              <option value="3marker">3 Markers</option>
               <option value="5marker">5 Markers</option>
-              <option value="truefalse">True/False</option>
+              <option value="true/false">True/False</option>
             </select>
           </div>
 

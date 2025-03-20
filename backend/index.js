@@ -163,21 +163,30 @@ const generateQuestions = async (text, questionType, numQuestions) => {
         let processedChunks = 0;
         const maxChunks = Math.min(chunks.length, 3); // Reduced max chunks to 3 for faster processing
 
+        // Normalize question type
+        const normalizedQuestionType = questionType.toLowerCase().trim();
+
+        // Define valid question types
+        const validQuestionTypes = {
+            '1marker': '1marker',
+            '2marker': '2marker',
+            '5marker': '5marker',
+            'truefalse': 'truefalse'
+        };
+
+        if (!validQuestionTypes[normalizedQuestionType]) {
+            throw new Error(`Invalid question type: ${questionType}. Valid types are: ${Object.keys(validQuestionTypes).join(', ')}`);
+        }
+
         for (const chunk of chunks.slice(0, maxChunks)) {
             try {
                 let prompt;
-                switch(questionType) {
-                    case 'flashcard':
-                        prompt = `Create 3-4 flashcards from this text. Format as JSON array with "question" and "answer" fields. Keep questions and answers concise:\n${chunk}`;
-                        break;
+                switch(normalizedQuestionType) {
                     case '1marker':
                         prompt = `Create 3-4 one-mark questions from this text. Format as JSON array with "question" and "answer" fields. Questions should be very short and direct:\n${chunk}`;
                         break;
                     case '2marker':
                         prompt = `Create 3-4 two-mark questions from this text. Format as JSON array with "question" and "answer" fields. Answers should be 2-3 sentences:\n${chunk}`;
-                        break;
-                    case '3marker':
-                        prompt = `Create 3-4 three-mark questions from this text. Format as JSON array with "question" and "answer" fields. Answers should be 3-4 sentences with key points:\n${chunk}`;
                         break;
                     case '5marker':
                         prompt = `Create 3-4 five-mark questions from this text. Format as JSON array with "question" and "answer" fields. Answers should be detailed with multiple points:\n${chunk}`;
@@ -186,7 +195,7 @@ const generateQuestions = async (text, questionType, numQuestions) => {
                         prompt = `Create 3-4 true/false statements from this text. Format as JSON array with "question" and "answer" fields. Include explanation in answer:\n${chunk}`;
                         break;
                     default:
-                        throw new Error('Invalid question type');
+                        throw new Error(`Invalid question type: ${questionType}`);
                 }
 
                 const response = await queryMistral(prompt);
@@ -265,8 +274,16 @@ app.post('/api/process-file', upload.single('file'), async (req, res) => {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        const questionType = req.body.questionType || 'flashcard';
+        const questionType = req.body.questionType || '1marker';
         const numQuestions = parseInt(req.body.numQuestions) || 5;
+
+        console.log('Starting file processing:', {
+            filename: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+            questionType,
+            numQuestions
+        });
 
         // Check cache first
         const fileHash = req.file.filename + questionType + numQuestions;
@@ -275,28 +292,37 @@ app.post('/api/process-file', upload.single('file'), async (req, res) => {
             return res.json(cachedResult);
         }
 
-        console.log('Processing file:', req.file.originalname);
         let text = '';
         const filePath = req.file.path;
 
         // Extract text based on file type
-        if (req.file.mimetype === 'application/pdf') {
-            const dataBuffer = fs.readFileSync(filePath);
-            const data = await pdfParse(dataBuffer);
-            text = data.text || '';
-        } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
-            const json = await pptx2json.toJSON(filePath);
-            text = json.slides?.map(slide => 
-                slide.texts?.map(text => text.text || '').join(' ') || ''
-            ).join('\n') || '';
-        } else {
-            return res.status(400).json({ error: 'Unsupported file format' });
+        try {
+            if (req.file.mimetype === 'application/pdf') {
+                console.log('Processing PDF file...');
+                const dataBuffer = fs.readFileSync(filePath);
+                const data = await pdfParse(dataBuffer);
+                text = data.text || '';
+                console.log(`PDF text length: ${text.length} characters`);
+            } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+                console.log('Processing PPTX file...');
+                const json = await pptx2json.toJSON(filePath);
+                text = json.slides?.map(slide => 
+                    slide.texts?.map(text => text.text || '').join(' ') || ''
+                ).join('\n') || '';
+                console.log(`PPTX text length: ${text.length} characters`);
+            } else {
+                return res.status(400).json({ error: 'Unsupported file format' });
+            }
+        } catch (extractError) {
+            console.error('Error extracting text from file:', extractError);
+            throw new Error(`Failed to extract text from file: ${extractError.message}`);
         }
 
         if (!text.trim()) {
             throw new Error('No text content found in the file');
         }
 
+        console.log('Starting text processing...');
         // Process with increased timeout
         const timeout = new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Processing timeout - please try with a smaller file or fewer questions')), PROCESSING_TIMEOUT)
@@ -314,6 +340,7 @@ app.post('/api/process-file', upload.single('file'), async (req, res) => {
             timeout
         ]);
         
+        console.log('Processing completed successfully');
         // Cache the result
         cache.set(fileHash, result);
 
@@ -324,7 +351,12 @@ app.post('/api/process-file', upload.single('file'), async (req, res) => {
 
         res.json(result);
     } catch (error) {
-        console.error('Error processing file:', error);
+        console.error('Error processing file:', {
+            error: error.message,
+            stack: error.stack,
+            file: req.file?.originalname,
+            path: req.file?.path
+        });
         
         if (req.file?.path && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path);
