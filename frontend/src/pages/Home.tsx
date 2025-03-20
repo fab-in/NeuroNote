@@ -1,46 +1,20 @@
 import React, { useState } from 'react';
-import { Upload, Brain, History, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Upload, Brain, History } from 'lucide-react';
 import axios from 'axios';
-
-interface FlashcardData {
-  summary: string;
-  questions: string;
-}
-
-interface Question {
-  question: string;
-  answer: string;
-}
+import { useNavigate } from 'react-router-dom';
 
 export default function Home() {
+  const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
   const [questionType, setQuestionType] = useState('1marker');
-  const [flashcardData, setFlashcardData] = useState<FlashcardData | null>(null);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
-  const [showAnswer, setShowAnswer] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
-  const [questions, setQuestions] = useState<Question[]>([]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
       setError('');
     }
-  };
-
-  const processQuestions = (questionsText: string): Question[] => {
-    return questionsText
-      .split('\n')
-      .filter(q => q.trim())
-      .map(q => {
-        // Split question and answer if they exist
-        const [question, answer] = q.split('Answer:').map(s => s.trim());
-        return {
-          question: question || q,
-          answer: answer || 'Click to reveal answer'
-        };
-      });
   };
 
   const handleGenerate = async () => {
@@ -63,15 +37,16 @@ export default function Home() {
         throw new Error('Invalid response format from server');
       }
 
-      setFlashcardData({
-        summary: response.data.summary || '',
-        questions: response.data.questions
+      // Navigate to flashcard page with the data
+      navigate('/flashcard', {
+        state: {
+          flashcardData: {
+            summary: response.data.summary || '',
+            questions: response.data.questions,
+            questionType: response.data.questionType
+          }
+        }
       });
-      
-      // The questions are already in the correct format from the backend
-      setQuestions(response.data.questions);
-      setCurrentQuestionIndex(0);
-      setShowAnswer(false);
     } catch (err: any) {
       console.error('Error details:', err.response?.data);
       const errorMessage = err.response?.data?.details || 
@@ -82,28 +57,6 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const nextQuestion = () => {
-    if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex((prev: number) => prev + 1);
-      setShowAnswer(false);
-    }
-  };
-
-  const previousQuestion = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex((prev: number) => prev - 1);
-      setShowAnswer(false);
-    }
-  };
-
-  const toggleAnswer = () => {
-    setShowAnswer(!showAnswer);
-  };
-
-  const getCurrentQuestion = (): Question => {
-    return questions[currentQuestionIndex] || { question: '', answer: '' };
   };
 
   return (
@@ -124,20 +77,20 @@ export default function Home() {
 
       {/* Main Content */}
       <div className="flex-1 p-8">
-        <h1 className="text-3xl font-bold text-white mb-8">Generate Flasards</h1>
+        <h1 className="text-3xl font-bold text-white mb-8">Generate Flashcards</h1>
         
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-3xl mx-auto space-y-8">
           {/* File Upload Box */}
-          <div className="mb-8">
+          <div>
             <label
               htmlFor="file-upload"
-              className="block w-full p-12 border-2 border-dashed border-gray-600 rounded-lg text-center cursor-pointer hover:border-indigo-500 transition-colors bg-gray-800"
+              className="block w-full p-8 border-2 border-dashed border-gray-600 rounded-lg text-center cursor-pointer hover:border-indigo-500 transition-colors bg-gray-800"
             >
-              <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <Upload className="h-10 w-10 text-gray-400 mx-auto mb-3" />
               <div className="text-gray-300">
                 <span className="text-indigo-400 font-medium">Click to upload</span> or drag and drop
                 <br />
-                PDF or PPTX files (max 10MB)
+                PDF or PPTX files (max 5MB)
               </div>
               <input
                 id="file-upload"
@@ -155,7 +108,7 @@ export default function Home() {
           </div>
 
           {/* Question Configuration */}
-          <div className="mb-8">
+          <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Question Type
             </label>
@@ -180,60 +133,8 @@ export default function Home() {
           </button>
 
           {error && (
-            <div className="mt-4 p-4 bg-red-900/50 border border-red-500 rounded-lg">
+            <div className="p-4 bg-red-900/50 border border-red-500 rounded-lg">
               <p className="text-red-300 text-center">{error}</p>
-            </div>
-          )}
-
-          {/* Flashcard Display */}
-          {flashcardData && questions.length > 0 && (
-            <div className="mt-8 bg-gray-800 rounded-lg shadow-lg p-6">
-              <div className="text-center mb-6">
-                <h2 className="text-xl font-semibold text-white mb-2">Summary</h2>
-                <p className="text-gray-300">{flashcardData.summary}</p>
-              </div>
-
-              <div className="relative min-h-[300px] flex items-center justify-center">
-                <div className="w-full max-w-2xl">
-                  <div
-                    className="bg-gray-700 border-2 border-gray-600 rounded-lg p-6 cursor-pointer transform transition-transform hover:scale-105"
-                    onClick={toggleAnswer}
-                  >
-                    <div className="text-center">
-                      <p className="text-lg font-medium text-white mb-4">
-                        {getCurrentQuestion().question}
-                      </p>
-                      {showAnswer && (
-                        <p className="text-gray-300">
-                          {getCurrentQuestion().answer}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  onClick={previousQuestion}
-                  className="absolute left-0 top-1/2 transform -translate-y-1/2 bg-gray-700 p-2 rounded-full hover:bg-gray-600 disabled:opacity-50 text-white"
-                  disabled={currentQuestionIndex === 0}
-                >
-                  <ChevronLeft className="h-6 w-6" />
-                </button>
-
-                <button
-                  onClick={nextQuestion}
-                  className="absolute right-0 top-1/2 transform -translate-y-1/2 bg-gray-700 p-2 rounded-full hover:bg-gray-600 disabled:opacity-50 text-white"
-                  disabled={currentQuestionIndex === questions.length - 1}
-                >
-                  <ChevronRight className="h-6 w-6" />
-                </button>
-              </div>
-
-              <div className="text-center mt-4">
-                <p className="text-gray-300">
-                  Question {currentQuestionIndex + 1} of {questions.length}
-                </p>
-              </div>
             </div>
           )}
         </div>

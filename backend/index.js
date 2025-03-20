@@ -161,7 +161,7 @@ const generateQuestions = async (text, questionType, numQuestions) => {
 
         const allQuestions = [];
         let processedChunks = 0;
-        const maxChunks = Math.min(chunks.length, 3); // Reduced max chunks to 3 for faster processing
+        const maxChunks = Math.min(chunks.length, 5); // Increased max chunks to 5 for better coverage
 
         // Normalize question type
         const normalizedQuestionType = questionType.toLowerCase().trim();
@@ -183,16 +183,16 @@ const generateQuestions = async (text, questionType, numQuestions) => {
                 let prompt;
                 switch(normalizedQuestionType) {
                     case '1marker':
-                        prompt = `Create 3-4 one-mark questions from this text. Format as JSON array with "question" and "answer" fields. Questions should be very short and direct:\n${chunk}`;
+                        prompt = `Create 2-3 one-mark questions from this text. Format as JSON array with "question" and "answer" fields. Questions should be very short and direct. Example format: [{"question": "What is X?", "answer": "X is Y"}]:\n${chunk}`;
                         break;
                     case '2marker':
-                        prompt = `Create 3-4 two-mark questions from this text. Format as JSON array with "question" and "answer" fields. Answers should be 2-3 sentences:\n${chunk}`;
+                        prompt = `Create 2-3 two-mark questions from this text. Format as JSON array with "question" and "answer" fields. Answers should be 2-3 sentences. Example format: [{"question": "What is X?", "answer": "X is Y"}]:\n${chunk}`;
                         break;
                     case '5marker':
-                        prompt = `Create 3-4 five-mark questions from this text. Format as JSON array with "question" and "answer" fields. Answers should be detailed with multiple points:\n${chunk}`;
+                        prompt = `Create 2-3 five-mark questions from this text. Format as JSON array with "question" and "answer" fields. Answers should be detailed with multiple points. Example format: [{"question": "What is X?", "answer": "X is Y"}]:\n${chunk}`;
                         break;
                     case 'truefalse':
-                        prompt = `Create 3-4 true/false statements from this text. Format as JSON array with "question" and "answer" fields. Include explanation in answer:\n${chunk}`;
+                        prompt = `Create 2-3 true/false statements from this text. Format as JSON array with "question" and "answer" fields. Include explanation in answer. Example format: [{"question": "Statement: X is Y", "answer": "True/False: Explanation"}]:\n${chunk}`;
                         break;
                     default:
                         throw new Error(`Invalid question type: ${questionType}`);
@@ -208,20 +208,33 @@ const generateQuestions = async (text, questionType, numQuestions) => {
                         chunkQuestions = parsedResponse;
                     }
                 } catch (parseError) {
+                    console.log('JSON parsing failed, trying text parsing...');
                     // If JSON parsing fails, try to parse as text
                     const lines = response.split('\n');
                     let currentQuestion = null;
                     let currentAnswer = null;
 
                     for (const line of lines) {
-                        if (line.trim().startsWith('Q:') || line.trim().startsWith('Question:')) {
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine) continue;
+
+                        if (trimmedLine.startsWith('Q:') || trimmedLine.startsWith('Question:') || 
+                            trimmedLine.startsWith('Statement:') || trimmedLine.startsWith('True/False:')) {
                             if (currentQuestion && currentAnswer) {
                                 chunkQuestions.push({ question: currentQuestion, answer: currentAnswer });
                             }
-                            currentQuestion = line.replace(/^[Q:Question:]\s*/, '').trim();
+                            currentQuestion = trimmedLine
+                                .replace(/^[Q:Question:Statement:True\/False:]\s*/, '')
+                                .trim();
                             currentAnswer = null;
-                        } else if (line.trim().startsWith('A:') || line.trim().startsWith('Answer:')) {
-                            currentAnswer = line.replace(/^[A:Answer:]\s*/, '').trim();
+                        } else if (trimmedLine.startsWith('A:') || trimmedLine.startsWith('Answer:')) {
+                            currentAnswer = trimmedLine
+                                .replace(/^[A:Answer:]\s*/, '')
+                                .trim();
+                        } else if (!currentQuestion) {
+                            currentQuestion = trimmedLine;
+                        } else if (!currentAnswer) {
+                            currentAnswer = trimmedLine;
                         }
                     }
 
@@ -236,7 +249,9 @@ const generateQuestions = async (text, questionType, numQuestions) => {
                     typeof q.question === 'string' && 
                     typeof q.answer === 'string' && 
                     q.question.trim() && 
-                    q.answer.trim()
+                    q.answer.trim() &&
+                    q.question.length > 10 && // Ensure question is meaningful
+                    q.answer.length > 10 // Ensure answer is meaningful
                 );
                 
                 if (validQuestions.length > 0) {
@@ -254,7 +269,32 @@ const generateQuestions = async (text, questionType, numQuestions) => {
             }
         }
 
-        // If no questions were generated, throw an error
+        // If no questions were generated, try one more time with a different prompt
+        if (!allQuestions || allQuestions.length === 0) {
+            console.log('No questions generated, trying alternative prompt...');
+            const alternativePrompt = `Create 3 questions from this text. Format as JSON array with "question" and "answer" fields. Make questions clear and direct:\n${text.slice(0, 1000)}`;
+            
+            try {
+                const response = await queryMistral(alternativePrompt);
+                const parsedResponse = JSON.parse(response);
+                if (Array.isArray(parsedResponse)) {
+                    const validQuestions = parsedResponse.filter(q => 
+                        q && 
+                        typeof q.question === 'string' && 
+                        typeof q.answer === 'string' && 
+                        q.question.trim() && 
+                        q.answer.trim()
+                    );
+                    if (validQuestions.length > 0) {
+                        return validQuestions.slice(0, numQuestions);
+                    }
+                }
+            } catch (error) {
+                console.error('Alternative prompt failed:', error);
+            }
+        }
+
+        // If still no questions, throw an error
         if (!allQuestions || allQuestions.length === 0) {
             throw new Error('No valid questions could be generated from the text');
         }
