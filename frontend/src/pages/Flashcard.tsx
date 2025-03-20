@@ -1,86 +1,204 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import axios from 'axios';
 
-export default function Flashcard() {
-  const [isFlipped, setIsFlipped] = useState(false);
-  const [userAnswer, setUserAnswer] = useState('');
+interface FlashcardData {
+  summary: string;
+  questions: string;
+}
 
-  const handleFlip = () => {
-    setIsFlipped(!isFlipped);
+interface Question {
+  question: string;
+  answer: string;
+}
+
+const Flashcard: React.FC = () => {
+  const [file, setFile] = useState<File | null>(null);
+  const [questionType, setQuestionType] = useState<string>('one_word');
+  const [flashcardData, setFlashcardData] = useState<FlashcardData | null>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+  const [showAnswer, setShowAnswer] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const [questions, setQuestions] = useState<Question[]>([]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+      setError('');
+    }
+  };
+
+  const handleQuestionTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setQuestionType(e.target.value);
+  };
+
+  const processQuestions = (questionsText: string): Question[] => {
+    return questionsText
+      .split('\n')
+      .filter(q => q.trim())
+      .map(q => {
+        // Split question and answer if they exist
+        const [question, answer] = q.split('Answer:').map(s => s.trim());
+        return {
+          question: question || q,
+          answer: answer || 'Click to reveal answer'
+        };
+      });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) {
+      setError('Please select a file');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('questionType', questionType);
+
+    try {
+      const response = await axios.post('http://localhost:3000/api/process-file', formData);
+      setFlashcardData(response.data);
+      const processedQuestions = processQuestions(response.data.questions);
+      setQuestions(processedQuestions);
+      setCurrentQuestionIndex(0);
+      setShowAnswer(false);
+    } catch (err) {
+      setError('Error processing file. Please try again.');
+      console.error('Error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const nextQuestion = () => {
+    if (currentQuestionIndex < questions.length - 1) {
+      setCurrentQuestionIndex((prev: number) => prev + 1);
+      setShowAnswer(false);
+    }
+  };
+
+  const previousQuestion = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex((prev: number) => prev - 1);
+      setShowAnswer(false);
+    }
+  };
+
+  const toggleAnswer = () => {
+    setShowAnswer(!showAnswer);
+  };
+
+  const getCurrentQuestion = (): Question => {
+    return questions[currentQuestionIndex] || { question: '', answer: '' };
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 p-8">
-      <div className="max-w-3xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white">Flashcard Review</h1>
-          <p className="text-gray-400">Question 1 of 5</p>
-        </div>
+    <div className="min-h-screen bg-gray-100 py-8 px-4">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold text-center mb-8">Flashcard Generator</h1>
+        
+        {/* File Upload Form */}
+        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-md mb-8">
+          <div className="mb-4">
+            <label className="block text-gray-700 text-sm font-bold mb-2">
+              Upload PDF or PPTX
+            </label>
+            <input
+              type="file"
+              accept=".pdf,.pptx"
+              onChange={handleFileChange}
+              className="w-full p-2 border rounded"
+            />
+          </div>
+          
+          <div className="mb-4">
+            <label className="block text-gray-700 text-sm font-bold mb-2">
+              Question Type
+            </label>
+            <select
+              value={questionType}
+              onChange={handleQuestionTypeChange}
+              className="w-full p-2 border rounded"
+            >
+              <option value="one_word">One Word</option>
+              <option value="true_false">True/False</option>
+              <option value="3_mark">3 Mark</option>
+              <option value="5_mark">5 Mark</option>
+            </select>
+          </div>
 
-        {/* Flashcard */}
-        <div className="perspective-1000 mb-8">
-          <motion.div
-            className="relative w-full aspect-[4/3] cursor-pointer"
-            onClick={handleFlip}
-            animate={{ rotateY: isFlipped ? 180 : 0 }}
-            transition={{ duration: 0.6 }}
-            style={{ transformStyle: 'preserve-3d' }}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 disabled:bg-gray-400"
           >
-            {/* Front */}
-            <div
-              className={`absolute w-full h-full bg-gray-800 rounded-xl shadow-lg p-8 backface-hidden
-                ${isFlipped ? 'hidden' : ''}`}
-            >
-              <div className="absolute top-4 right-4 text-sm text-gray-400">
-                Tap to reveal answer
-              </div>
-              <div className="h-full flex flex-col justify-center">
-                <h2 className="text-2xl font-semibold text-white mb-4">
-                  What is the capital of France?
-                </h2>
-                <p className="text-sm text-gray-400">Question Type: 1-marker</p>
-              </div>
+            {loading ? 'Processing...' : 'Generate Flashcards'}
+          </button>
+
+          {error && (
+            <p className="text-red-500 mt-2 text-center">{error}</p>
+          )}
+        </form>
+
+        {/* Flashcard Display */}
+        {flashcardData && questions.length > 0 && (
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="text-center mb-6">
+              <h2 className="text-xl font-semibold mb-2">Summary</h2>
+              <p className="text-gray-600">{flashcardData.summary}</p>
             </div>
 
-            {/* Back */}
-            <div
-              className={`absolute w-full h-full bg-indigo-900 rounded-xl shadow-lg p-8 backface-hidden
-                ${!isFlipped ? 'hidden' : ''}`}
-              style={{ transform: 'rotateY(180deg)' }}
-            >
-              <div className="h-full flex flex-col justify-center">
-                <h3 className="text-xl font-semibold text-white mb-4">Answer:</h3>
-                <p className="text-lg text-gray-200">Paris</p>
+            <div className="relative min-h-[300px] flex items-center justify-center">
+              <div className="w-full max-w-2xl">
+                <div
+                  className="bg-white border-2 border-gray-200 rounded-lg p-6 cursor-pointer transform transition-transform hover:scale-105"
+                  onClick={toggleAnswer}
+                >
+                  <div className="text-center">
+                    <p className="text-lg font-medium mb-4">
+                      {getCurrentQuestion().question}
+                    </p>
+                    {showAnswer && (
+                      <p className="text-gray-600">
+                        {getCurrentQuestion().answer}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
+
+              <button
+                onClick={previousQuestion}
+                className="absolute left-0 top-1/2 transform -translate-y-1/2 bg-gray-200 p-2 rounded-full hover:bg-gray-300 disabled:opacity-50"
+                disabled={currentQuestionIndex === 0}
+              >
+                ←
+              </button>
+
+              <button
+                onClick={nextQuestion}
+                className="absolute right-0 top-1/2 transform -translate-y-1/2 bg-gray-200 p-2 rounded-full hover:bg-gray-300 disabled:opacity-50"
+                disabled={currentQuestionIndex === questions.length - 1}
+              >
+                →
+              </button>
             </div>
-          </motion.div>
-        </div>
 
-        {/* Answer Input */}
-        <div className="bg-gray-800 rounded-xl shadow-lg p-6">
-          <label htmlFor="answer" className="block text-sm font-medium text-gray-300 mb-2">
-            Your Answer
-          </label>
-          <textarea
-            id="answer"
-            rows={3}
-            value={userAnswer}
-            onChange={(e) => setUserAnswer(e.target.value)}
-            className="block w-full rounded-md border border-gray-600 bg-gray-700 px-3 py-2 text-white shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            placeholder="Type your answer here..."
-          />
-        </div>
-
-        {/* Navigation */}
-        <div className="flex justify-between mt-8">
-          <button className="px-4 py-2 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-800 hover:bg-gray-700">
-            Previous
-          </button>
-          <button className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
-            Next
-          </button>
-        </div>
+            <div className="text-center mt-4">
+              <p className="text-gray-600">
+                Question {currentQuestionIndex + 1} of {questions.length}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
-}
+};
+
+export default Flashcard;

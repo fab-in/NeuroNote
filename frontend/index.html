@@ -1,13 +1,173 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neuronote - PDF Flashcards</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .flashcard {
+            perspective: 1000px;
+            cursor: pointer;
+        }
+        .flashcard-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            transition: transform 0.8s;
+            transform-style: preserve-3d;
+        }
+        .flashcard.flipped .flashcard-inner {
+            transform: rotateY(180deg);
+        }
+        .flashcard-front, .flashcard-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .flashcard-back {
+            transform: rotateY(180deg);
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold text-center mb-8 text-gray-800">Neuronote Flashcards</h1>
+        
+        <!-- File Upload Section -->
+        <div class="max-w-md mx-auto bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Upload PDF</h2>
+            <form id="uploadForm" class="space-y-4">
+                <div class="flex items-center justify-center w-full">
+                    <label class="w-full flex flex-col items-center px-4 py-6 bg-white rounded-lg shadow-lg tracking-wide border border-blue-500 cursor-pointer hover:bg-blue-500 hover:text-white">
+                        <svg class="w-8 h-8" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                            <path d="M16.88 9.1A4 4 0 0 1 16 17H5a5 5 0 0 1-1-9.9V7a3 3 0 0 1 4.52-2.59A4.98 4.98 0 0 1 17 8c0 .38-.04.74-.12 1.1z" />
+                        </svg>
+                        <span class="mt-2 text-base">Select a PDF file</span>
+                        <input type="file" class="hidden" id="fileInput" accept=".pdf" />
+                    </label>
+                </div>
+                <button type="submit" class="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition duration-200">
+                    Generate Flashcards
+                </button>
+            </form>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="hidden text-center py-8">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            <p class="mt-4 text-gray-600">Generating flashcards from your PDF...</p>
+        </div>
+
+        <!-- Flashcards Section -->
+        <div id="flashcardsContainer" class="hidden">
+            <div class="flex justify-between items-center mb-6">
+                <button id="prevCard" class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition duration-200">
+                    Previous
+                </button>
+                <span id="cardCounter" class="text-gray-600"></span>
+                <button id="nextCard" class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition duration-200">
+                    Next
+                </button>
+            </div>
+            <div class="max-w-2xl mx-auto">
+                <div id="flashcard" class="flashcard h-64 bg-white rounded-lg shadow-lg">
+                    <div class="flashcard-inner">
+                        <div class="flashcard-front">
+                            <p id="question" class="text-xl font-medium text-gray-800"></p>
+                        </div>
+                        <div class="flashcard-back">
+                            <p id="answer" class="text-xl font-medium text-gray-800"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let flashcards = [];
+        let currentCardIndex = 0;
+
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a PDF file');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // Show loading state
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('flashcardsContainer').classList.add('hidden');
+
+            try {
+                const response = await fetch('http://localhost:3000/api/process-file', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                flashcards = data.flashcards;
+                currentCardIndex = 0;
+                updateCardDisplay();
+                
+                // Hide loading state and show flashcards
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('flashcardsContainer').classList.remove('hidden');
+            } catch (error) {
+                alert('Error processing file: ' + error.message);
+                document.getElementById('loading').classList.add('hidden');
+            }
+        });
+
+        function updateCardDisplay() {
+            if (flashcards.length === 0) return;
+            
+            const card = flashcards[currentCardIndex];
+            document.getElementById('question').textContent = card.question;
+            document.getElementById('answer').textContent = card.answer;
+            document.getElementById('cardCounter').textContent = `${currentCardIndex + 1} / ${flashcards.length}`;
+        }
+
+        document.getElementById('flashcard').addEventListener('click', () => {
+            document.getElementById('flashcard').classList.toggle('flipped');
+        });
+
+        document.getElementById('prevCard').addEventListener('click', () => {
+            if (currentCardIndex > 0) {
+                currentCardIndex--;
+                document.getElementById('flashcard').classList.remove('flipped');
+                updateCardDisplay();
+            }
+        });
+
+        document.getElementById('nextCard').addEventListener('click', () => {
+            if (currentCardIndex < flashcards.length - 1) {
+                currentCardIndex++;
+                document.getElementById('flashcard').classList.remove('flipped');
+                updateCardDisplay();
+            }
+        });
+    </script>
+</body>
 </html>
